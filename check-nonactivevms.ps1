@@ -55,7 +55,11 @@
 
         # Param3 help description
         [Parameter(Mandatory)]
-        [byte]$IntervalMin
+        [byte]$IntervalMin,
+
+        # Param3 help description
+        [byte]$Threshold = 0
+
     )
 
     Begin {
@@ -88,6 +92,8 @@
             "${PastDays}AvgNetUsageKB" = [math]::round($ntwkAvgUsage,2)
             "${PastDays}DiskNetUsageKB" = [math]::round($DiskAvgUsage,2)
             "${PastDays}NetworkCardsConnected" = $NetworkConnected
+            "thresholdUsed" = $Threshold
+            "NotActive" = if ($cpuAvgUsage -le $Threshold -or $ntwkAvgUsage -le $Threshold -or $DiskAvgUsage -le $Threshold) {$True} else {$False}
             }
         }
     }
