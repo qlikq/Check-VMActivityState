@@ -1,4 +1,4 @@
-    <#
+<#
     .SYNOPSIS
         Checks VM activity in the past
     .DESCRIPTION
@@ -23,58 +23,75 @@
         https://github.com/qlikq/Check-VMActivityState
     #>
 
-    [CmdletBinding(DefaultParameterSetName='Default Parameter Set Name',
-        SupportsShouldProcess,
-        PositionalBinding,
-        HelpUri = 'http://www.microsoft.com/',
-        ConfirmImpact='Medium')]
+    [CmdletBinding()]
     [Alias()]
-    [OutputType([String])]
+    [OutputType([PSCustomObject])]
     Param (
         # Param1 help description
         [Parameter(Mandatory, 
-            ValueFromPipeline,
-            ValueFromPipelineByPropertyName, 
-            ValueFromRemainingArguments, 
-            Position=0,
-            ParameterSetName='Default Parameter Set Name')]
-        [ValidateNotNull()]
+            ValueFromPipeline)]
         [ValidateNotNullOrEmpty()]
-        [ValidateCount(0,5)]
-        [ValidateSet('sun', 'moon', 'earth')]
-        [Alias('p1')] 
-        [String]$Param1,
+        [VMware.VimAutomation.ViCore.Impl.V1.VM.UniversalVirtualMachineImpl[]]$VM,
 
         # Param2 help description
-        [Parameter(ParameterSetName='Default Parameter Set Name')]
-        [AllowNull()]
-        [AllowEmptyCollection()]
-        [AllowEmptyString()]
-        [ValidateScript({$True})]
-        [ValidateRange(0,5)]
-        [int]$Param2,
+         [switch]$CpuUsage,
+
+        # Param2 help description
+        [switch]$MemUsage,
+
+        # Param2 help description
+        [switch]$IOUsage,
 
         # Param3 help description
-        [Parameter(ParameterSetName='Another Parameter Set Name')]
-        [ValidatePattern("[a-z]*")]
-        [ValidateLength(0,15)]
-        [String]$Param3
+        [switch]$NetworkUsage,
+
+        # Param3 help description
+        [Parameter(Mandatory)]
+        [byte]$PastDays,
+
+        # Param3 help description
+        [Parameter(Mandatory)]
+        [switch]$NetworkCards,
+
+        # Param3 help description
+        [Parameter(Mandatory)]
+        [byte]$IntervalMin
     )
 
     Begin {
-        $vms = Get-VM
+        #$vms = Get-VM
     }
 
     Process {
-        If ($PSCmdlet.ShouldProcess('Target', 'Operation')) {
-            [PSCustomObject]@{
-                '30dayAvgCpuUsagePercent' = 'fd'
-                '30dayAvgMemUsagePercent' = 'two'
-                '30dayAvgNetUsageKB' = 'three'
-                '30dayAvgIOUsageKB' = 'four'
-                }
+    Foreach ($VMItem in $VM){
+        if($NetworkUsage){
+            $ntwkAvgUsage = ($VMItem|get-stat -Stat 'net.usage.average' -intervalMin $intervalmin -Start (get-date).AddDays(-$PastDays)|measure-object  -Property value -Average).Average
+        }
+        if ($cpuUsage){
+            $cpuAvgUsage =  ($VMItem|get-stat -Stat 'cpu.usage.average' -intervalMin $intervalmin -Start (get-date).AddDays(-$PastDays)|measure-object  -Property value -Average).Average
+        }
+        if ($MemUsage){
+            $MemAvgUsage = ($VMItem|get-stat -Stat 'mem.usage.average' -intervalMin $intervalmin -Start (get-date).AddDays(-$PastDays)|measure-object  -Property value -Average).Average
+        }
+        if ($IOUsage){
+            $DiskAvgUsage = ($VMItem|get-stat -Stat 'disk.usage.average' -intervalMin $intervalmin -Start (get-date).AddDays(-$PastDays)|measure-object  -Property value -Average).Average
+        }
+        if ($NetworkCards){
+            $NetworkConnected = ($VMItem.ExtensionData.Config.Hardware.Device |? {$_ -is [VMware.Vim.VirtualEthernetCard]}).Connectable.Connected -join ','
+        }
+        
+
+        [PSCustomObject]@{
+            'VMName' = $VMItem.Name
+            "${PastDays}dayAvgCpuUsagePercent" = [math]::round($cpuAvgUsage,2)
+            "${PastDays}dayAvgMemUsagePercent" = [math]::round($MemAvgUsage,2)
+            "${PastDays}AvgNetUsageKB" = [math]::round($ntwkAvgUsage,2)
+            "${PastDays}DiskNetUsageKB" = [math]::round($DiskAvgUsage,2)
+            "${PastDays}NetworkCardsConnected" = $NetworkConnected
+            }
         }
     }
 
     End {
+        
     }
