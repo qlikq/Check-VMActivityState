@@ -4,9 +4,13 @@
     .DESCRIPTION
         Checks multiple activity indicators for information in order to state if VM is performing any activity
     .EXAMPLE
-        Check-NonActiveVMs -Indicator all
+        get-vm 'abc' | .\check-nonactivevms.ps1 -CpuUsage -MemUsage -IOUsage -NetworkUsage -PastDays 31 -NetworkCards -IntervalMin 120 -Threshold 1
     .EXAMPLE
-        Another example of how to use this cmdlet
+        .\check-nonactivevms.ps1 -CpuUsage -MemUsage -IOUsage -NetworkUsage -PastDays 31 -NetworkCards -IntervalMin 120 -Threshold 1 -vm (get-vm myVM1a)
+    .EXAMPLE
+        .\check-nonactivevms.ps1 -CpuUsage -MemUsage -IOUsage -NetworkUsage -PastDays 31 -NetworkCards -IntervalMin 120 -Threshold 1 -vm (get-vm myVM1a,myVM2b)
+    .EXAMPLE
+        (get-vm myVM1a,myVM2b) | .\check-nonactivevms.ps1 -CpuUsage -MemUsage -IOUsage -NetworkUsage -PastDays 31 -NetworkCards -IntervalMin 120 -Threshold 1
     .INPUTS
         Activity indicators
     .OUTPUTS
@@ -24,66 +28,80 @@
     #>
 
     [CmdletBinding()]
-    [Alias()]
     [OutputType([PSCustomObject])]
     Param (
-        # Param1 help description
+        # Virtual machine or array of them, this parameter expects the virtualmachine object coming from get-vm ... cmdlet
         [Parameter(Mandatory, 
             ValueFromPipeline)]
         [ValidateNotNullOrEmpty()]
         [VMware.VimAutomation.ViCore.Impl.V1.VM.UniversalVirtualMachineImpl[]]$VM,
 
-        # Param2 help description
+        # Indicate if you would like to gather information about VM Avg cpu usage, returned in %
          [switch]$CpuUsage,
 
-        # Param2 help description
+        # Indicate if you would like to gather information about VM Avg memory usage, returned in %
         [switch]$MemUsage,
 
-        # Param2 help description
+        # Indicate if you would like to gather information about VM Avg i/o usage, returned in kb/s
         [switch]$IOUsage,
 
-        # Param3 help description
+        # Indicate if you would like to gather information about VM Avg network usage, returned in kb/s
         [switch]$NetworkUsage,
 
-        # Param3 help description
+        # It will be used to make the start date, we will check statistics for the past Xnumber of PastDays, keep in mind that your VirtualCenter has to handle that number of days
         [Parameter(Mandatory)]
         [byte]$PastDays,
 
-        # Param3 help description
+        # If specified, you will get additional property about network card states, to check if the network card is connected to network or not
         [Parameter(Mandatory)]
         [switch]$NetworkCards,
 
-        # Param3 help description
+        # Invervalmin for the statistic data to be used, 1,5,30,60,120 for example
         [Parameter(Mandatory)]
         [byte]$IntervalMin,
 
-        # Param3 help description
+        # Initial version of threshold implementation, it is used to mark as not active vms with indicators below that given threshold
         [byte]$Threshold = 0
 
     )
 
     Begin {
-        #$vms = Get-VM
+        #We don't need to do anything here, for now.
     }
 
     Process {
+    $params = @{
+    IntervalMin = $intervalmin
+    Start       = (Get-Date).AddDays(-$PastDays)
+}
     Foreach ($VMItem in $VM){
-        if($NetworkUsage){
-            $ntwkAvgUsage = ($VMItem|get-stat -Stat 'net.usage.average' -intervalMin $intervalmin -Start (get-date).AddDays(-$PastDays)|measure-object  -Property value -Average).Average
+
+        switch ($true){
+            {$NetworkUsage}{
+            $ntwkAvgUsage = ($VMItem|
+                get-stat -Stat 'net.usage.average' @params|
+                measure-object  -Property value -Average).Average
+            }
+            {$cpuUsage}{
+                $cpuAvgUsage = ($VMItem|
+                get-stat -Stat 'cpu.usage.average' @params|
+                measure-object  -Property value -Average).Average
+                }
+            {$MemUsage}{
+            $MemAvgUsage = ($VMItem|
+                get-stat -Stat 'mem.usage.average' @params|
+                measure-object  -Property value -Average).Average
+            }
+            {$IOUsage}{
+                $DiskAvgUsage = ($VMItem|
+                    get-stat -Stat 'disk.usage.average' @params|
+                    measure-object  -Property value -Average).Average
+                }
+            {$NetworkCards}{
+                $NetworkConnected = ($VMItem.ExtensionData.Config.Hardware.Device |
+                Where-Object {$_ -is [VMware.Vim.VirtualEthernetCard]}).Connectable.Connected -join ','
+            }
         }
-        if ($cpuUsage){
-            $cpuAvgUsage =  ($VMItem|get-stat -Stat 'cpu.usage.average' -intervalMin $intervalmin -Start (get-date).AddDays(-$PastDays)|measure-object  -Property value -Average).Average
-        }
-        if ($MemUsage){
-            $MemAvgUsage = ($VMItem|get-stat -Stat 'mem.usage.average' -intervalMin $intervalmin -Start (get-date).AddDays(-$PastDays)|measure-object  -Property value -Average).Average
-        }
-        if ($IOUsage){
-            $DiskAvgUsage = ($VMItem|get-stat -Stat 'disk.usage.average' -intervalMin $intervalmin -Start (get-date).AddDays(-$PastDays)|measure-object  -Property value -Average).Average
-        }
-        if ($NetworkCards){
-            $NetworkConnected = ($VMItem.ExtensionData.Config.Hardware.Device |? {$_ -is [VMware.Vim.VirtualEthernetCard]}).Connectable.Connected -join ','
-        }
-        
 
         [PSCustomObject]@{
             'VMName' = $VMItem.Name
