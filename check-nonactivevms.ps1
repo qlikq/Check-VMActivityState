@@ -66,14 +66,14 @@
     )
 
     Begin {
-        #We don't need to do anything here, for now.
+        $params = @{
+            IntervalMin = $intervalmin
+            Start       = (Get-Date).AddDays(-$PastDays)
+        }
     }
 
     Process {
-    $params = @{
-    IntervalMin = $intervalmin
-    Start       = (Get-Date).AddDays(-$PastDays)
-}
+
     Foreach ($VMItem in $VM){
 
         switch ($true){
