@@ -65,70 +65,73 @@
     )
 
     Begin {
-    $params = @{
-        IntervalMin = $intervalmin
-        Start       = (Get-Date).AddDays(-$PastDays)
-    }
-    $si = get-view -id serviceinstance
-    #Retrieve ServiceInstance view
-
-    $pm = get-view -id $si.Content.PerfManager
-    #Retrieve Performance Manager view
-    
-    $VMCpuAvgPercentageCounterID = ($pm.PerfCounter | Where-Object {$_.NameInfo.key -eq 'usage' -and $_.GroupInfo.Key -eq 'cpu' -and $_.RollupType -eq 'average'}).Key
-    $VMMemAvgPercentageCounterID = ($pm.PerfCounter | Where-Object {$_.NameInfo.key -eq 'usage' -and $_.GroupInfo.Key -eq 'mem' -and $_.RollupType -eq 'average'}).Key
-    $CPUPerfMetricID = New-Object VMware.Vim.PerfMetricId -Property @{CounterId = $VMCpuAvgPercentageCounterID; Instance = '' }
-    $MEMPerfMetricID = New-Object VMware.Vim.PerfMetricId -Property @{CounterId = $VMMemAvgPercentageCounterID; Instance = '' }
-    #Set Instance to '' as we want to get all cpu avg
-
+   
     }
 
     Process {
-
+        $params = @{
+            IntervalMin = $intervalmin
+            Start       = (Get-Date).AddDays(-$PastDays)
+        }
+        $si = get-view -id serviceinstance
+        #Retrieve ServiceInstance view
+    
+        $pm = get-view -id $si.Content.PerfManager
+        #Retrieve Performance Manager view
+        
+        $VMCpuAvgPercentageCounterID = ($pm.PerfCounter | Where-Object {$_.NameInfo.key -eq 'usage' -and $_.GroupInfo.Key -eq 'cpu' -and $_.RollupType -eq 'average'}).Key
+        $VMMemAvgPercentageCounterID = ($pm.PerfCounter | Where-Object {$_.NameInfo.key -eq 'usage' -and $_.GroupInfo.Key -eq 'mem' -and $_.RollupType -eq 'average'}).Key
+        $VMNetAvgPercentageCounterID = ($pm.PerfCounter | Where-Object {$_.NameInfo.key -eq 'usage' -and $_.GroupInfo.Key -eq 'net' -and $_.RollupType -eq 'average'}).Key
+        $VMDskAvgPercentageCounterID = ($pm.PerfCounter | Where-Object {$_.NameInfo.key -eq 'usage' -and $_.GroupInfo.Key -eq 'disk' -and $_.RollupType -eq 'average'}).Key
+        $CPUPerfMetricID = New-Object VMware.Vim.PerfMetricId -Property @{CounterId = $VMCpuAvgPercentageCounterID; Instance = '' }
+        $MEMPerfMetricID = New-Object VMware.Vim.PerfMetricId -Property @{CounterId = $VMNetAvgPercentageCounterID; Instance = '' }
+        $NETPerfMetricID = New-Object VMware.Vim.PerfMetricId -Property @{CounterId = $VMMemAvgPercentageCounterID; Instance = '' }
+        $DSKPerfMetricID = New-Object VMware.Vim.PerfMetricId -Property @{CounterId = $VMDskAvgPercentageCounterID; Instance = '' }
+        $MetricId = @($CPUPerfMetricID,$MEMPerfMetricID,$NETPerfMetricID,$DSKPerfMetricID)
+    
+        #Set Instance to '' as we want to get all cpu avg
+        $statMetric = @()
     Foreach ($VMItem in $VM){
-
         switch ($true){
             {$NetworkUsage}{
-            $ntwkAvgUsage = ($VMItem|
-                get-stat -Stat 'net.usage.average' @params|
-                measure-object  -Property value -Average).Average
-            }
-            {$cpuUsage}{
-                $PerfSpecProps = @{
-                    Entity = $vmitem.extensiondata.moref
-                    starttime = (get-date).AddDays(-$PastDays)
-                    endtime = (get-date)
-                    metricid = $PerfMetricID
-                    Format = 'csv'
+                $statMetric +=$NETPerfMetricID 
                 }
-            
-                $QueryPerfSpec = New-Object VMware.Vim.PerfQuerySpec -Property $PerfSpecProps
-                $data = $pm.QueryPerf($QueryPerfSpec)
-                $cpuAvgUsage=($data[0].Value[0].value -split ',' |%{$_ / 100 } | Measure-Object -Average).Average
+            {$cpuUsage}{
+                $statMetric +=$CPUPerfMetricID
                 }
             {$MemUsage}{
-                $PerfSpecProps = @{
-                    Entity = $vmitem.extensiondata.moref
-                    starttime = (get-date).AddDays(-$PastDays)
-                    endtime = (get-date)
-                    metricid = $MEMPerfMetricID
-                    Format = 'csv'
+                $statMetric +=$MEMPerfMetricID
                 }
-            
-                $QueryPerfSpec = New-Object VMware.Vim.PerfQuerySpec -Property $PerfSpecProps
-                $data = $pm.QueryPerf($QueryPerfSpec)
-                $MemAvgUsage=($data[0].Value[0].value -split ',' |%{$_ / 100 } | Measure-Object -Average).Average
-            }
             {$IOUsage}{
-                $DiskAvgUsage = ($VMItem|
-                    get-stat -Stat 'disk.usage.average' @params|
-                    measure-object  -Property value -Average).Average
+                $statMetric += $DSKPerfMetricID
                 }
             {$NetworkCards}{
                 $NetworkConnected = ($VMItem.ExtensionData.Config.Hardware.Device |
                 Where-Object {$_ -is [VMware.Vim.VirtualEthernetCard]}).Connectable.Connected -join ','
             }
         }
+
+        $PerfSpecProps = @{
+            Entity = $vmitem.extensiondata.moref
+            starttime = (get-date).AddDays(-$PastDays)
+            endtime = (get-date)
+            metricid = $statMetric
+            Format = 'csv'
+            #implement the interval here
+        }
+    
+        $QueryPerfSpec = New-Object VMware.Vim.PerfQuerySpec -Property $PerfSpecProps
+        $data = $pm.QueryPerf($QueryPerfSpec)
+        $cpuData = ($data[0].value | ? { $_.id.counterid -eq $VMCpuAvgPercentageCounterID }).value -split ','
+        $diskData = ($data[0].value | ? { $_.id.counterid -eq $VMDskAvgPercentageCounterID }).value -split ','
+        $netData = ($data[0].value | ? { $_.id.counterid -eq $VMNetAvgPercentageCounterID }).value -split ','
+        $memData = ($data[0].value | ? { $_.id.counterid -eq $VMMemAvgPercentageCounterID }).value -split ','
+        $cpuAvgUsage = ($cpuData | % { $_ / 100 } | Measure-Object -Average).Average
+        $memAvgUsage = ($memData | % { $_ / 100 } | Measure-Object -Average).Average
+        $ntwkAvgUsage = ($netData | % { $_ / 100 } | Measure-Object -Average).Average
+        $diskAvgUsage = ($diskData | % { $_ / 100 } | Measure-Object -Average).Average
+
+
 
         [PSCustomObject]@{
             'VMName' = $VMItem.Name
