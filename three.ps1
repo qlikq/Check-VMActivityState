@@ -69,7 +69,7 @@
         IntervalMin = $intervalmin
         Start       = (Get-Date).AddDays(-$PastDays)
     }
-
+    $stat =''
     }
 
     Process {

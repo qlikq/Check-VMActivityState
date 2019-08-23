@@ -69,6 +69,17 @@
         IntervalMin = $intervalmin
         Start       = (Get-Date).AddDays(-$PastDays)
     }
+    $si = get-view -id serviceinstance
+    #Retrieve ServiceInstance view
+
+    $pm = get-view -id $si.Content.PerfManager
+    #Retrieve Performance Manager view
+    
+    $VMCpuAvgPercentageCounterID = ($pm.PerfCounter | Where-Object {$_.NameInfo.key -eq 'usage' -and $_.GroupInfo.Key -eq 'cpu' -and $_.RollupType -eq 'average'}).Key
+    $VMMemAvgPercentageCounterID = ($pm.PerfCounter | Where-Object {$_.NameInfo.key -eq 'usage' -and $_.GroupInfo.Key -eq 'mem' -and $_.RollupType -eq 'average'}).Key
+    $CPUPerfMetricID = New-Object VMware.Vim.PerfMetricId -Property @{CounterId = $VMCpuAvgPercentageCounterID; Instance = '' }
+    $MEMPerfMetricID = New-Object VMware.Vim.PerfMetricId -Property @{CounterId = $VMMemAvgPercentageCounterID; Instance = '' }
+    #Set Instance to '' as we want to get all cpu avg
 
     }
 
@@ -83,14 +94,30 @@
                 measure-object  -Property value -Average).Average
             }
             {$cpuUsage}{
-                $cpuAvgUsage = ($VMItem|
-                get-stat -Stat 'cpu.usage.average' @params|
-                measure-object  -Property value -Average).Average
+                $PerfSpecProps = @{
+                    Entity = $vmitem.extensiondata.moref
+                    starttime = (get-date).AddDays(-$PastDays)
+                    endtime = (get-date)
+                    metricid = $PerfMetricID
+                    Format = 'csv'
+                }
+            
+                $QueryPerfSpec = New-Object VMware.Vim.PerfQuerySpec -Property $PerfSpecProps
+                $data = $pm.QueryPerf($QueryPerfSpec)
+                $cpuAvgUsage=($data[0].Value[0].value -split ',' |%{$_ / 100 } | Measure-Object -Average).Average
                 }
             {$MemUsage}{
-            $MemAvgUsage = ($VMItem|
-                get-stat -Stat 'mem.usage.average' @params|
-                measure-object  -Property value -Average).Average
+                $PerfSpecProps = @{
+                    Entity = $vmitem.extensiondata.moref
+                    starttime = (get-date).AddDays(-$PastDays)
+                    endtime = (get-date)
+                    metricid = $MEMPerfMetricID
+                    Format = 'csv'
+                }
+            
+                $QueryPerfSpec = New-Object VMware.Vim.PerfQuerySpec -Property $PerfSpecProps
+                $data = $pm.QueryPerf($QueryPerfSpec)
+                $MemAvgUsage=($data[0].Value[0].value -split ',' |%{$_ / 100 } | Measure-Object -Average).Average
             }
             {$IOUsage}{
                 $DiskAvgUsage = ($VMItem|
