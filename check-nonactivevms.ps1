@@ -15,14 +15,6 @@
         Activity indicators
     .OUTPUTS
         VM array with their activity indicators
-    .NOTES
-        General notes
-    .COMPONENT
-        The component this cmdlet belongs to
-    .ROLE
-        The role this cmdlet belongs to
-    .FUNCTIONALITY
-        The functionality that best describes this cmdlet
     .LINK
         https://github.com/qlikq/Check-VMActivityState
     #>
@@ -56,8 +48,7 @@
         [switch]$NetworkCards,
 
         # Invervalmin for the statistic data to be used, 1,5,30,60,120 for example
-        [Parameter(Mandatory)]
-        [byte]$IntervalMin,
+        $IntervalMin,
 
         # Initial version of threshold implementation, it is used to mark as not active vms with indicators below that given threshold
         [byte]$Threshold = 0
@@ -65,11 +56,9 @@
     )
 
     Begin {
-    $params = @{
-        IntervalMin = $intervalmin
-        Start       = (Get-Date).AddDays(-$PastDays)
-    }
 
+        $Start = (Get-Date).AddDays(-$PastDays)
+        $stat =@()
     }
 
     Process {
@@ -78,31 +67,31 @@
 
         switch ($true){
             {$NetworkUsage}{
-            $ntwkAvgUsage = ($VMItem|
-                get-stat -Stat 'net.usage.average' @params|
-                measure-object  -Property value -Average).Average
-            }
+            $stat +='net.usage.average'
+                }
             {$cpuUsage}{
-                $cpuAvgUsage = ($VMItem|
-                get-stat -Stat 'cpu.usage.average' @params|
-                measure-object  -Property value -Average).Average
+            $stat +='cpu.usage.average'
                 }
             {$MemUsage}{
-            $MemAvgUsage = ($VMItem|
-                get-stat -Stat 'mem.usage.average' @params|
-                measure-object  -Property value -Average).Average
+            $stat +='mem.usage.average'
             }
             {$IOUsage}{
-                $DiskAvgUsage = ($VMItem|
-                    get-stat -Stat 'disk.usage.average' @params|
-                    measure-object  -Property value -Average).Average
+            $stat += 'disk.usage.average'
                 }
             {$NetworkCards}{
                 $NetworkConnected = ($VMItem.ExtensionData.Config.Hardware.Device |
                 Where-Object {$_ -is [VMware.Vim.VirtualEthernetCard]}).Connectable.Connected -join ','
             }
         }
+        #$p = get-stat -Entity $vms[20] -Stat mem.usage.average,cpu.usage.average,disk.usage.average -Start (Get-Date).AddDays(-31)
+        #$p |Group-Object -Property MetricId |select name, @{n='AVG';e={[math]::round(($_.Group.Value | measure-object -average).Average,2)}}
+        #($pp |?{$_.name -eq 'cpu.usage.average'}).AVG
+        $statresult = get-stat -Entity $VMitem -Stat $stat -Start $start -IntervalMins $IntervalMin |Group-Object -Property MetricId |select name, @{n='AVG';e={($_.Group.Value | measure-object -average).Average}}
 
+        $ntwkAvgUsage = ($statresult |?{$_.name -eq 'net.usage.average'}).AVG
+        $cpuAvgUsage = ($statresult |?{$_.name -eq 'cpu.usage.average'}).AVG
+        $MemAvgUsage = ($statresult |?{$_.name -eq 'mem.usage.average'}).AVG
+        $DiskAvgUsage = ($statresult |?{$_.name -eq 'disk.usage.average'}).AVG
         [PSCustomObject]@{
             'VMName' = $VMItem.Name
             "${PastDays}dayAvgCpuUsagePercent" = [math]::round($cpuAvgUsage,2)

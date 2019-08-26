@@ -56,8 +56,7 @@
         [switch]$NetworkCards,
 
         # Invervalmin for the statistic data to be used, 1,5,30,60,120 for example
-        [Parameter(Mandatory)]
-        [byte]$IntervalMin,
+        $IntervalMin,
 
         # Initial version of threshold implementation, it is used to mark as not active vms with indicators below that given threshold
         [byte]$Threshold = 0
@@ -79,14 +78,14 @@
         $pm = get-view -id $si.Content.PerfManager
         #Retrieve Performance Manager view
         
-        $VMCpuAvgPercentageCounterID = ($pm.PerfCounter | Where-Object {$_.NameInfo.key -eq 'usage' -and $_.GroupInfo.Key -eq 'cpu' -and $_.RollupType -eq 'average'}).Key
-        $VMMemAvgPercentageCounterID = ($pm.PerfCounter | Where-Object {$_.NameInfo.key -eq 'usage' -and $_.GroupInfo.Key -eq 'mem' -and $_.RollupType -eq 'average'}).Key
-        $VMNetAvgPercentageCounterID = ($pm.PerfCounter | Where-Object {$_.NameInfo.key -eq 'usage' -and $_.GroupInfo.Key -eq 'net' -and $_.RollupType -eq 'average'}).Key
-        $VMDskAvgPercentageCounterID = ($pm.PerfCounter | Where-Object {$_.NameInfo.key -eq 'usage' -and $_.GroupInfo.Key -eq 'disk' -and $_.RollupType -eq 'average'}).Key
-        $CPUPerfMetricID = New-Object VMware.Vim.PerfMetricId -Property @{CounterId = $VMCpuAvgPercentageCounterID; Instance = '' }
-        $MEMPerfMetricID = New-Object VMware.Vim.PerfMetricId -Property @{CounterId = $VMNetAvgPercentageCounterID; Instance = '' }
-        $NETPerfMetricID = New-Object VMware.Vim.PerfMetricId -Property @{CounterId = $VMMemAvgPercentageCounterID; Instance = '' }
-        $DSKPerfMetricID = New-Object VMware.Vim.PerfMetricId -Property @{CounterId = $VMDskAvgPercentageCounterID; Instance = '' }
+        $VMCpuAvgCounterID = ($pm.PerfCounter | Where-Object {$_.NameInfo.key -eq 'usage' -and $_.GroupInfo.Key -eq 'cpu' -and $_.RollupType -eq 'average'}).Key
+        $VMMemAvgCounterID = ($pm.PerfCounter | Where-Object {$_.NameInfo.key -eq 'usage' -and $_.GroupInfo.Key -eq 'mem' -and $_.RollupType -eq 'average'}).Key
+        $VMNetAvgCounterID = ($pm.PerfCounter | Where-Object {$_.NameInfo.key -eq 'usage' -and $_.GroupInfo.Key -eq 'net' -and $_.RollupType -eq 'average'}).Key
+        $VMDskAvgCounterID = ($pm.PerfCounter | Where-Object {$_.NameInfo.key -eq 'usage' -and $_.GroupInfo.Key -eq 'disk' -and $_.RollupType -eq 'average'}).Key
+        $CPUPerfMetricID = New-Object VMware.Vim.PerfMetricId -Property @{CounterId = $VMCpuAvgCounterID; Instance = '' }
+        $MEMPerfMetricID = New-Object VMware.Vim.PerfMetricId -Property @{CounterId = $VMNetAvgCounterID; Instance = '' }
+        $NETPerfMetricID = New-Object VMware.Vim.PerfMetricId -Property @{CounterId = $VMMemAvgCounterID; Instance = '' }
+        $DSKPerfMetricID = New-Object VMware.Vim.PerfMetricId -Property @{CounterId = $VMDskAvgCounterID; Instance = '' }
         $MetricId = @($CPUPerfMetricID,$MEMPerfMetricID,$NETPerfMetricID,$DSKPerfMetricID)
     
         #Set Instance to '' as we want to get all cpu avg
@@ -117,15 +116,15 @@
             endtime = (get-date)
             metricid = $statMetric
             Format = 'csv'
-            #implement the interval here
+            IntervalId = '86400'
         }
     
         $QueryPerfSpec = New-Object VMware.Vim.PerfQuerySpec -Property $PerfSpecProps
         $data = $pm.QueryPerf($QueryPerfSpec)
-        $cpuData = ($data[0].value | ? { $_.id.counterid -eq $VMCpuAvgPercentageCounterID }).value -split ','
-        $diskData = ($data[0].value | ? { $_.id.counterid -eq $VMDskAvgPercentageCounterID }).value -split ','
-        $netData = ($data[0].value | ? { $_.id.counterid -eq $VMNetAvgPercentageCounterID }).value -split ','
-        $memData = ($data[0].value | ? { $_.id.counterid -eq $VMMemAvgPercentageCounterID }).value -split ','
+        $cpuData = ($data[0].value | ? { $_.id.counterid -eq $VMCpuAvgCounterID }).value -split ','
+        $diskData = ($data[0].value | ? { $_.id.counterid -eq $VMDskAvgCounterID }).value -split ','
+        $netData = ($data[0].value | ? { $_.id.counterid -eq $VMNetAvgCounterID }).value -split ','
+        $memData = ($data[0].value | ? { $_.id.counterid -eq $VMMemAvgCounterID }).value -split ','
         $cpuAvgUsage = ($cpuData | % { $_ / 100 } | Measure-Object -Average).Average
         $memAvgUsage = ($memData | % { $_ / 100 } | Measure-Object -Average).Average
         $ntwkAvgUsage = ($netData | % { $_ / 100 } | Measure-Object -Average).Average
